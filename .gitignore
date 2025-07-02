@@ -1,3 +1,5 @@
 save
 __pycache__
 point_e_model_cache
+libs/gsplat
+libs/point_e
