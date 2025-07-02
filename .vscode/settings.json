@@ -1,0 +1,6 @@
+{
+    "python.analysis.extraPaths": [
+        "./libs",
+        "./libs/point_e"
+    ]
+}
