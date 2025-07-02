@@ -1,0 +1,6 @@
+[submodule "libs/gsplat"]
+	path = libs/gsplat
+	url = https://github.com/nerfstudio-project/gsplat.git
+[submodule "libs/point_e"]
+	path = libs/point_e
+	url = https://github.com/openai/point-e.git
