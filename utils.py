@@ -1,3 +1,8 @@
+
+"""
+Extract from https://github.com/nerfstudio-project/gsplat/blob/main/gsplat/utils.py
+"""
+
 import random
 
 import numpy as np

@@ -191,73 +191,65 @@ class Config:
         else:
             assert_never(strategy)
 
+
 def rotate_points(coords, axis, theta_deg):
     theta = np.radians(theta_deg)  # Convertir degrés → radians
     c, s = np.cos(theta), np.sin(theta)
 
-    if axis == 'X':
-        R = np.array([
-            [1, 0, 0],
-            [0, c, -s],
-            [0, s, c]
-        ])
-    elif axis == 'Y':
-        R = np.array([
-            [c, 0, s],
-            [0, 1, 0],
-            [-s, 0, c]
-        ])
-    elif axis == 'Z':
-        R = np.array([
-            [c, -s, 0],
-            [s, c, 0],
-            [0, 0, 1]
-        ])
+    if axis == "X":
+        R = np.array([[1, 0, 0], [0, c, -s], [0, s, c]])
+    elif axis == "Y":
+        R = np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
+    elif axis == "Z":
+        R = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
     else:
         raise ValueError("Axe invalide. Utiliser 'X', 'Y' ou 'Z'.")
 
     # Appliquer la rotation : (N,3) x (3,3).T = (N,3)
     return (coords @ R.T).astype(np.float32)
 
-def initialize_point_cloud(
-    prompt: str = "a red motorcycle"
-):
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    print('creating base model...')
-    base_name = 'base40M-textvec'
+def initialize_point_cloud(prompt: str = "a red motorcycle"):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    print("creating base model...")
+    base_name = "base40M-textvec"
     base_model = model_from_config(MODEL_CONFIGS[base_name], device)
     base_model.eval()
     base_diffusion = diffusion_from_config(DIFFUSION_CONFIGS[base_name])
 
-    print('creating upsample model...')
-    upsampler_model = model_from_config(MODEL_CONFIGS['upsample'], device)
+    print("creating upsample model...")
+    upsampler_model = model_from_config(MODEL_CONFIGS["upsample"], device)
     upsampler_model.eval()
-    upsampler_diffusion = diffusion_from_config(DIFFUSION_CONFIGS['upsample'])
+    upsampler_diffusion = diffusion_from_config(DIFFUSION_CONFIGS["upsample"])
 
-    print('downloading base checkpoint...')
+    print("downloading base checkpoint...")
     base_model.load_state_dict(load_checkpoint(base_name, device))
 
-    print('downloading upsampler checkpoint...')
-    upsampler_model.load_state_dict(load_checkpoint('upsample', device))
+    print("downloading upsampler checkpoint...")
+    upsampler_model.load_state_dict(load_checkpoint("upsample", device))
 
     sampler = PointCloudSampler(
         device=device,
         models=[base_model, upsampler_model],
         diffusions=[base_diffusion, upsampler_diffusion],
         num_points=[1024, 4096 - 1024, 10_000],
-        aux_channels=['R', 'G', 'B'],
+        aux_channels=["R", "G", "B"],
         guidance_scale=[3.0, 0.0],
-        model_kwargs_key_filter=('texts', ''), # Do not condition the upsampler at all
+        model_kwargs_key_filter=("texts", ""),  # Do not condition the upsampler at all
     )
 
     samples = None
-    for x in tqdm(sampler.sample_batch_progressive(batch_size=1, model_kwargs=dict(texts=[prompt]))):
+    for x in tqdm(
+        sampler.sample_batch_progressive(
+            batch_size=1, model_kwargs=dict(texts=[prompt])
+        )
+    ):
         samples = x
 
     pc = sampler.output_to_point_clouds(samples)[0]
-    rgb_array = np.column_stack((pc.channels['R'], pc.channels['G'], pc.channels['B']))
-    a = rotate_points(pc.coords, 'X', 90)
+    rgb_array = np.column_stack((pc.channels["R"], pc.channels["G"], pc.channels["B"]))
+    a = rotate_points(pc.coords, "X", 90)
     return a, rgb_array
 
 
@@ -277,12 +269,14 @@ def create_splats_with_optimizers(
     batch_size: int = 1,
     device: str = "cuda",
     prompt: str = "a red motorcycle",
-    use_epoint = False,
+    use_epoint=False,
 ) -> Tuple[torch.nn.ParameterDict, Dict[str, torch.optim.Optimizer]]:
-    
     if use_epoint:
         points, rgbs = initialize_point_cloud(prompt)
-        points, rgbs = init_extent * scene_scale * torch.asarray(points), torch.asarray(rgbs)
+        points, rgbs = (
+            init_extent * scene_scale * torch.asarray(points),
+            torch.asarray(rgbs),
+        )
     else:
         points = init_extent * scene_scale * (torch.rand((init_num_pts, 3)) * 2 - 1)
         rgbs = torch.rand((init_num_pts, 3))
@@ -407,7 +401,7 @@ def initialize_cameras(radius, n_camera=100, device="cuda"):
     return camtoworld
 
 
-def get_sds_loss(latents, text_embeddings, alphas, guidance_scale=100, grad_scale=1.0):
+def get_sds_loss(unet, latents, text_embeddings, null_embeds, alphas, guidance_scale=100, grad_scale=1.0):
     t = torch.randint(1, len(alphas) + 1, (1,), device=latents.device)
     z_t = torch.randn_like(latents)
 
@@ -462,185 +456,184 @@ def compute_loss(
     return loss
 
 
-cfg = Config(strategy=DefaultStrategy(verbose=True))
-cfg.adjust_steps(0.2)
+def main():
+    # === Basic configuration ===
+    prompt = "a strawberry"
+    device = "cuda"
+    save_dir = "save"
 
-device = "cuda"
-save_dir = "save"
-if os.path.exists(save_dir):
-    shutil.rmtree(save_dir)
-os.makedirs(save_dir, exist_ok=True)
+    use_epoint = True
 
-prompt = "a strawberry"
+    # Clean and create the save directory
+    if os.path.exists(save_dir):
+        shutil.rmtree(save_dir)
+    os.makedirs(save_dir, exist_ok=True)
 
-splats, optimizers = create_splats_with_optimizers(
-    init_num_pts=cfg.init_num_pts,
-    init_extent=cfg.init_extent,
-    init_opacity=cfg.init_opa,
-    init_scale=cfg.init_scale,
-    means_lr=cfg.means_lr * 2,
-    scales_lr=cfg.scales_lr,
-    opacities_lr=cfg.opacities_lr,
-    quats_lr=cfg.quats_lr,
-    sh0_lr=cfg.sh0_lr * 2,
-    shN_lr=cfg.shN_lr,
-    scene_scale=1,
-    sh_degree=cfg.sh_degree,
-    batch_size=cfg.batch_size,
-    device=device,
-    prompt=prompt,
-    use_epoint=True
-)
+    # Create the config object and adjust step size
+    cfg = Config(strategy=DefaultStrategy(verbose=True))
+    cfg.adjust_steps(0.2)
 
-
-cfg.strategy.check_sanity(splats, optimizers)
-
-strategy_state = cfg.strategy.initialize_state(scene_scale=1)
-
-# Create stable diffusion object
-vae, unet, scheduler, text_embeds, null_embeds, alphas = initialize_stable_diffusion(prompt="a photo of " + prompt)
-
-# Create cameras in the scene
-width = 512
-height = 512
-
-fx = fy = 500.0
-cx = width / 2
-cy = height / 2
-
-n_camera = 100
-
-cams_to_world = initialize_cameras(radius=15, n_camera=n_camera, device=device)
-Ks = (
-    torch.tensor([[fx, 0, cx], [0, fy, cy], [0, 0, 1]], device=device)
-    .unsqueeze(0)
-    .repeat(n_camera, 1, 1)
-)
-
-guidance_scale = 25
-
-# Train
-
-# Init Train
-
-num_steps = 500
-
-schedulers = [
-    # means has a learning rate schedule, that end at 0.01 of the initial value
-    torch.optim.lr_scheduler.ExponentialLR(
-        optimizers["means"], gamma=0.01 ** (1.0 / num_steps)
-    ),
-]
-
-for step in tqdm(range(1,num_steps+1)):
-    # Choose a camera from cams_to_world
-    idx = torch.randint(0, n_camera, (1,)).item()
-    camtoworld_selected = cams_to_world[idx % n_camera].unsqueeze(0)
-    Ks_selected = Ks[idx % n_camera].unsqueeze(0)
-
-    sh_degree_to_use = min(step // cfg.sh_degree_interval, cfg.sh_degree)
-
-    render_colors, render_alphas, info = rasterization(
-        means=splats["means"],
-        quats=splats["quats"],
-        scales=torch.exp(splats["scales"]),
-        opacities=torch.sigmoid(splats["opacities"]),
-        colors=torch.cat([splats["sh0"], splats["shN"]], 1),
-        viewmats=torch.linalg.inv(camtoworld_selected),  # [C, 4, 4]
-        Ks=Ks_selected,  # [C, 3, 3]
-        width=width,
-        height=height,
-        packed=cfg.packed,
-        absgrad=(
-            cfg.strategy.absgrad if isinstance(cfg.strategy, DefaultStrategy) else False
-        ),
-        sparse_grad=cfg.sparse_grad,
-        rasterize_mode="classic",
-        distributed=False,
-        camera_model="pinhole",
-        with_ut=cfg.with_ut,
-        with_eval3d=cfg.with_eval3d,
-        sh_degree=sh_degree_to_use,
+    # === Initialize splats and their optimizers ===
+    splats, optimizers = create_splats_with_optimizers(
+        init_num_pts=cfg.init_num_pts,
+        init_extent=cfg.init_extent,
+        init_opacity=cfg.init_opa,
+        init_scale=cfg.init_scale,
+        means_lr=cfg.means_lr * 2,
+        scales_lr=cfg.scales_lr,
+        opacities_lr=cfg.opacities_lr,
+        quats_lr=cfg.quats_lr,
+        sh0_lr=cfg.sh0_lr * 2,
+        shN_lr=cfg.shN_lr,
+        scene_scale=1,
+        sh_degree=cfg.sh_degree,
+        batch_size=cfg.batch_size,
+        device=device,
+        prompt=prompt,
+        use_epoint=use_epoint,
     )
 
-    if random.random() < 0.5:
-        bkgd = torch.tensor([0.0, 0.0, 0.0], device=device)
-    else:
-        bkgd = torch.tensor([1.0, 1.0, 1.0], device=device)
+    # Check and initialize strategy state
+    cfg.strategy.check_sanity(splats, optimizers)
+    strategy_state = cfg.strategy.initialize_state(scene_scale=1)
 
-    # bkgd = torch.tensor([1.0, 1.0, 1.0], device=device)
-
-    colors = render_colors + bkgd * (1.0 - render_alphas)
-    colors = colors.permute(0, 3, 1, 2).clamp(0, 1) * 2 - 1
-    # colors = F.interpolate(colors, size=(512, 512), mode='bilinear', align_corners=False)
-
-    cfg.strategy.step_pre_backward(
-        params=splats,
-        optimizers=optimizers,
-        state=strategy_state,
-        step=step,
-        info=info,
+    # === Initialize Stable Diffusion components ===
+    vae, unet, scheduler, text_embeds, null_embeds, alphas = (
+        initialize_stable_diffusion(prompt="a photo of " + prompt)
     )
 
-    latent = vae.encode(colors).latent_dist.sample() * 0.18215
-    sds_loss = get_sds_loss(latent, text_embeds, alphas, guidance_scale=guidance_scale)
-    compactness_reg = splats["means"].norm(p=2, dim=1).mean()
-    opacity_reg = ((torch.sigmoid(splats["opacities"]) - 0.5).abs()).mean()
-    scale_reg = splats["scales"].norm(dim=1).mean()
-    quat_reg = ((splats["quats"].norm(dim=1) - 1) ** 2).mean()
-    colors_reg = torch.mean(colors**2)
+    # === Camera parameters ===
+    width, height = 512, 512
+    fx = fy = 500.0
+    cx, cy = width / 2, height / 2
+    n_camera = 100
 
-    loss = compute_loss(
-        sds_loss,
-        compactness_reg,
-        opacity_reg,
-        scale_reg,
-        quat_reg,
-        colors_reg,
-        step,
-        num_steps,
+    cams_to_world = initialize_cameras(radius=15, n_camera=n_camera, device=device)
+    Ks = (
+        torch.tensor([[fx, 0, cx], [0, fy, cy], [0, 0, 1]], device=device)
+        .unsqueeze(0)
+        .repeat(n_camera, 1, 1)
     )
 
-    loss.backward()
+    # === Other parameters ===
+    guidance_scale = 25
 
-    for k, optimizer in optimizers.items():
-        optimizer.step()
+    ## === Train ===
+    # === Init Train ===
+    num_steps = 500
 
-    # for scheduler in schedulers:
-    #     scheduler.step()
+    for step in tqdm(range(1, num_steps + 1)):
+        # Choose a camera from cams_to_world
+        idx = torch.randint(0, n_camera, (1,)).item()
+        camtoworld_selected = cams_to_world[idx % n_camera].unsqueeze(0)
+        Ks_selected = Ks[idx % n_camera].unsqueeze(0)
 
-    cfg.strategy.step_post_backward(
-        params=splats,
-        optimizers=optimizers,
-        state=strategy_state,
-        step=step,
-        info=info,
-        packed=cfg.packed,
-    )
+        sh_degree_to_use = min(step // cfg.sh_degree_interval, cfg.sh_degree)
 
-    if step % 10 == 0:
-        print(f"[{step:04d}] Loss: {loss.item():.4f}")
-        print(
-            f"Reg[step {step}] - SDS: {sds_loss.item():.4f} | Compact: {compactness_reg.item():.4f} "
-            f"Opacity: {opacity_reg.item():.4f} | Scale: {scale_reg.item():.4f} | Quat: {quat_reg.item():.6f} | Colors: {colors_reg.item():.6f}"
-        )
-
-    if step % 1 == 0 or step == num_steps - 1:
-        with torch.no_grad():
-            decoded = vae.decode(latent / 0.18215).sample
-            img = (decoded.clamp(-1, 1) + 1) / 2
-            img = img[0].cpu().permute(1, 2, 0).numpy() * 255
-            img = Image.fromarray(img.astype("uint8"))
-            img.save(os.path.join(save_dir, f"step_{step:04d}.png"))
-
-    if step % 50 == 0 or step == 0 or step == num_steps - 1:
-        export_splats(
+        render_colors, render_alphas, info = rasterization(
             means=splats["means"],
-            scales=splats["scales"],
             quats=splats["quats"],
-            opacities=splats["opacities"],
-            sh0=splats["sh0"],
-            shN=splats["shN"],
-            format="ply",
-            save_to=f"save/point_cloud_{step}.ply",
+            scales=torch.exp(splats["scales"]),
+            opacities=torch.sigmoid(splats["opacities"]),
+            colors=torch.cat([splats["sh0"], splats["shN"]], 1),
+            viewmats=torch.linalg.inv(camtoworld_selected),  # [C, 4, 4]
+            Ks=Ks_selected,  # [C, 3, 3]
+            width=width,
+            height=height,
+            packed=cfg.packed,
+            absgrad=(
+                cfg.strategy.absgrad
+                if isinstance(cfg.strategy, DefaultStrategy)
+                else False
+            ),
+            sparse_grad=cfg.sparse_grad,
+            rasterize_mode="classic",
+            distributed=False,
+            camera_model="pinhole",
+            with_ut=cfg.with_ut,
+            with_eval3d=cfg.with_eval3d,
+            sh_degree=sh_degree_to_use,
         )
+
+        # Switch background color to help opacity of gaussians
+        if random.random() < 0.5:
+            bkgd = torch.tensor([0.0, 0.0, 0.0], device=device)
+        else:
+            bkgd = torch.tensor([1.0, 1.0, 1.0], device=device)
+
+        colors = render_colors + bkgd * (1.0 - render_alphas)
+        colors = colors.permute(0, 3, 1, 2).clamp(0, 1) * 2 - 1
+        # colors = F.interpolate(colors, size=(512, 512), mode='bilinear', align_corners=False)
+
+        cfg.strategy.step_pre_backward(
+            params=splats,
+            optimizers=optimizers,
+            state=strategy_state,
+            step=step,
+            info=info,
+        )
+
+        latent = vae.encode(colors).latent_dist.sample() * 0.18215
+        sds_loss = get_sds_loss(
+            unet, latent, text_embeds, null_embeds, alphas, guidance_scale=guidance_scale
+        )
+        compactness_reg = splats["means"].norm(p=2, dim=1).mean()
+        opacity_reg = ((torch.sigmoid(splats["opacities"]) - 0.5).abs()).mean()
+        scale_reg = splats["scales"].norm(dim=1).mean()
+        quat_reg = ((splats["quats"].norm(dim=1) - 1) ** 2).mean()
+        colors_reg = torch.mean(colors**2)
+
+        loss = compute_loss(
+            sds_loss,
+            compactness_reg,
+            opacity_reg,
+            scale_reg,
+            quat_reg,
+            colors_reg,
+            step,
+            num_steps,
+        )
+
+        loss.backward()
+
+        for k, optimizer in optimizers.items():
+            optimizer.step()
+
+        cfg.strategy.step_post_backward(
+            params=splats,
+            optimizers=optimizers,
+            state=strategy_state,
+            step=step,
+            info=info,
+            packed=cfg.packed,
+        )
+
+        if step % 10 == 0:
+            print(f"[{step:04d}] Loss: {loss.item():.4f}")
+            print(
+                f"Reg[step {step}] - SDS: {sds_loss.item():.4f} | Compact: {compactness_reg.item():.4f} "
+                f"Opacity: {opacity_reg.item():.4f} | Scale: {scale_reg.item():.4f} | Quat: {quat_reg.item():.6f} | Colors: {colors_reg.item():.6f}"
+            )
+
+        if step % 1 == 0 or step == num_steps - 1:
+            with torch.no_grad():
+                decoded = vae.decode(latent / 0.18215).sample
+                img = (decoded.clamp(-1, 1) + 1) / 2
+                img = img[0].cpu().permute(1, 2, 0).numpy() * 255
+                img = Image.fromarray(img.astype("uint8"))
+                img.save(os.path.join(save_dir, f"step_{step:04d}.png"))
+
+        if step % 50 == 0 or step == 0 or step == num_steps - 1:
+            export_splats(
+                means=splats["means"],
+                scales=splats["scales"],
+                quats=splats["quats"],
+                opacities=splats["opacities"],
+                sh0=splats["sh0"],
+                shN=splats["shN"],
+                format="ply",
+                save_to=f"save/point_cloud_{step}.ply",
+            )
+
+if __name__ == "__main__":
+    main()
