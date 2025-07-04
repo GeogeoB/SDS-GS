@@ -1,30 +1,27 @@
+import argparse
 import math
 import os
 import random
 import shutil
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Union
-import sys
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 from diffusers import StableDiffusionPipeline
-from PIL import Image
-from torch import nn
-from tqdm import tqdm
-from typing_extensions import Literal, assert_never
-from utils import knn, rgb_to_sh
-
 from gsplat import export_splats
 from gsplat.rendering import rasterization
 from gsplat.strategy import DefaultStrategy, MCMCStrategy
-
+from PIL import Image
 from point_e.diffusion.configs import DIFFUSION_CONFIGS, diffusion_from_config
 from point_e.diffusion.sampler import PointCloudSampler
-from point_e.models.download import load_checkpoint
 from point_e.models.configs import MODEL_CONFIGS, model_from_config
-from point_e.util.plotting import plot_point_cloud
+from point_e.models.download import load_checkpoint
+from torch import nn
+from tqdm import tqdm
+from typing_extensions import Literal, assert_never
+
+from utils import knn, rgb_to_sh
 
 
 @dataclass
@@ -401,7 +398,15 @@ def initialize_cameras(radius, n_camera=100, device="cuda"):
     return camtoworld
 
 
-def get_sds_loss(unet, latents, text_embeddings, null_embeds, alphas, guidance_scale=100, grad_scale=1.0):
+def get_sds_loss(
+    unet,
+    latents,
+    text_embeddings,
+    null_embeds,
+    alphas,
+    guidance_scale=100,
+    grad_scale=1.0,
+):
     t = torch.randint(1, len(alphas) + 1, (1,), device=latents.device)
     z_t = torch.randn_like(latents)
 
@@ -456,14 +461,13 @@ def compute_loss(
     return loss
 
 
-def main():
-    # === Basic configuration ===
-    prompt = "a strawberry"
-    device = "cuda"
-    save_dir = "save"
-
-    use_epoint = True
-
+def main(
+    prompt: str = "a hamburger",
+    device: str = "cuda",
+    save_dir: str = "save",
+    use_epoint: bool = True,
+    scene_scale: int = 1,
+):
     # Clean and create the save directory
     if os.path.exists(save_dir):
         shutil.rmtree(save_dir)
@@ -485,7 +489,7 @@ def main():
         quats_lr=cfg.quats_lr,
         sh0_lr=cfg.sh0_lr * 2,
         shN_lr=cfg.shN_lr,
-        scene_scale=1,
+        scene_scale=scene_scale,
         sh_degree=cfg.sh_degree,
         batch_size=cfg.batch_size,
         device=device,
@@ -495,7 +499,7 @@ def main():
 
     # Check and initialize strategy state
     cfg.strategy.check_sanity(splats, optimizers)
-    strategy_state = cfg.strategy.initialize_state(scene_scale=1)
+    strategy_state = cfg.strategy.initialize_state(scene_scale=scene_scale)
 
     # === Initialize Stable Diffusion components ===
     vae, unet, scheduler, text_embeds, null_embeds, alphas = (
@@ -556,10 +560,12 @@ def main():
         )
 
         # Switch background color to help opacity of gaussians
-        if random.random() < 0.5:
-            bkgd = torch.tensor([0.0, 0.0, 0.0], device=device)
-        else:
-            bkgd = torch.tensor([1.0, 1.0, 1.0], device=device)
+        # if random.random() < 0.5:
+        #     bkgd = torch.tensor([0.0, 0.0, 0.0], device=device)
+        # else:
+        #     bkgd = torch.tensor([1.0, 1.0, 1.0], device=device)
+
+        bkgd = torch.tensor([1.0, 1.0, 1.0], device=device)
 
         colors = render_colors + bkgd * (1.0 - render_alphas)
         colors = colors.permute(0, 3, 1, 2).clamp(0, 1) * 2 - 1
@@ -575,7 +581,12 @@ def main():
 
         latent = vae.encode(colors).latent_dist.sample() * 0.18215
         sds_loss = get_sds_loss(
-            unet, latent, text_embeds, null_embeds, alphas, guidance_scale=guidance_scale
+            unet,
+            latent,
+            text_embeds,
+            null_embeds,
+            alphas,
+            guidance_scale=guidance_scale,
         )
         compactness_reg = splats["means"].norm(p=2, dim=1).mean()
         opacity_reg = ((torch.sigmoid(splats["opacities"]) - 0.5).abs()).mean()
@@ -635,5 +646,40 @@ def main():
                 save_to=f"save/point_cloud_{step}.ply",
             )
 
+
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Cli configuration.")
+
+    parser.add_argument(
+        "--prompt",
+        type=str,
+        default="a hamburger",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="cuda",
+        choices=["cpu", "cuda"],
+    )
+    parser.add_argument("--save_dir", type=str, default="save", help="save folder.")
+    parser.add_argument(
+        "--use_epoint",
+        action="store_true",
+        help="Use epoint to initialize the ploint cloud",
+    )
+    parser.add_argument(
+        "--scene_scale",
+        type=float,
+        default=1.0,
+        help="Scaling factor applied to the scene",
+    )
+
+    args = parser.parse_args()
+
+    main(
+        prompt=args.prompt,
+        device=args.device,
+        save_dir=args.save_dir,
+        use_epoint=args.use_epoint,
+        scene_scale=args.scene_scale,
+    )
