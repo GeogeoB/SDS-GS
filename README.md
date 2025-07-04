@@ -25,20 +25,7 @@ This version integrates:
 
 <!-- ![View Placeholder](images/strawberry.png) -->
 
-<div align="center">
-  <div style="display: inline-block; text-align: center; width: 30%;">
-    <img src="images/hamburger.png" width="100%"/>
-    <p>A Hamburger</p>
-  </div>
-  <div style="display: inline-block; text-align: center; width: 30%;">
-    <img src="images/strawberry.png" width="100%"/>
-    <p>A Strawberry</p>
-  </div>
-  <div style="display: inline-block; text-align: center; width: 30%;">
-    <img src="images/tree.png" width="100%"/>
-    <p>A Tree</p>
-  </div>
-</div>
+<img src="images/image.jpg" width="100%"/>
 
 ---
 
