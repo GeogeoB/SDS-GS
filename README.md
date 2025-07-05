@@ -2,9 +2,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Python Version](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
-[![Stable Diffusion](https://img.shields.io/badge/Model-StableDiffusion-v1.5-red)](https://huggingface.co/stable-diffusion-v1-5)
 
-> A free and minimal reimplementation of [DreamGaussian](https://arxiv.org/pdf/2309.16653), using **Stable Diffusion v1.5**, **gsplat**, and **Point-E**.
+> A free minimal reimplementation of [DreamGaussian](https://arxiv.org/pdf/2309.16653), using **Stable Diffusion v1.5**, **gsplat**, and **Point-E**.
 
 ---
 
@@ -34,9 +33,26 @@ This version integrates:
 Clone the repository and install dependencies:
 
 ```bash
-git clone https://github.com/GeogeoB/SDS-GS.git
+# Clone the repository
+git clone --recursive https://github.com/GeogeoB/SDS-GS.git
 cd SDS-GS
-pip install -r requirements.txt
+
+#Create and activate an environment
+python -m venv SDS-GS-env
+source SDS-GS-env/bin/activate
+
+# Install package
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128 # Install the correct version for your system
+pip install diffusers
+pip install gsplat
+
+# Install point_e packages
+cd libs/point_e
+pip install -e .
+cd ../..
+
+pip install scikit-learn
+pip install transformers
 ```
 
 Make sure you also install:
