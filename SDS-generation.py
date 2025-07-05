@@ -560,12 +560,10 @@ def main(
         )
 
         # Switch background color to help opacity of gaussians
-        # if random.random() < 0.5:
-        #     bkgd = torch.tensor([0.0, 0.0, 0.0], device=device)
-        # else:
-        #     bkgd = torch.tensor([1.0, 1.0, 1.0], device=device)
-
-        bkgd = torch.tensor([1.0, 1.0, 1.0], device=device)
+        if random.random() < 0.5:
+            bkgd = torch.tensor([0.0, 0.0, 0.0], device=device)
+        else:
+            bkgd = torch.tensor([1.0, 1.0, 1.0], device=device)
 
         colors = render_colors + bkgd * (1.0 - render_alphas)
         colors = colors.permute(0, 3, 1, 2).clamp(0, 1) * 2 - 1
