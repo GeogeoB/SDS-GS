@@ -50,7 +50,7 @@ Follow their installation guides as needed.
 Example command:
 
 ```bash
-python SDS-generation.py --prompt "a cat" --device cpu --save_dir results --use_epoint
+python SDS-generation.py --prompt "a hamburger" --device cpu --save_dir results --use_epoint
 ```
 
 ### Arguments
