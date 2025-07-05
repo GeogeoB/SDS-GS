@@ -9,7 +9,7 @@
 
 ## 🎯 Overview
 
-**SDS-GS* is a lightweight reimplementation of [DreamGaussian: Generative Gaussian Splatting for Efficient 3D Content Creation](https://arxiv.org/pdf/2309.16653).  
+**SDS-GS** is a lightweight reimplementation of [DreamGaussian: Generative Gaussian Splatting for Efficient 3D Content Creation](https://arxiv.org/pdf/2309.16653).  
 It generates 3D content from a text prompt by optimizing a 3D Gaussian splatting using Score Distillation Sampling (SDS).
 
 This version integrates:
